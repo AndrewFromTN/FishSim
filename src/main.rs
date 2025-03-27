@@ -2,6 +2,10 @@ use dioxus::prelude::*;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
+mod topography;
+
+use topography::TopographicMap;
+
 #[derive(Clone, Debug)]
 struct Fish {
     id: usize,
@@ -88,7 +92,10 @@ impl FishSimulation {
 
 
 fn main() {
-    dioxus::launch(App);
+    //dioxus::launch(App);
+
+    let map = TopographicMap::new(42, 64, 32, 0.05);
+    println!("{}", map);
 }
 
 #[component]

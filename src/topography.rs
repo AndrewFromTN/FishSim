@@ -1,8 +1,15 @@
 use colored::Colorize;
+use rand::prelude::*;
+use rand_chacha::ChaCha8Rng;
 use std::fmt::Display;
 use std::vec::Vec;
 
 use noise::{NoiseFn, Perlin};
+
+const SUPER_SHALLOW: f64 = 0.75f64;
+const SHALLOW: f64 = 0.5f64;
+const MID: f64 = 0.0f64;
+const DEEP: f64 = -0.6f64;
 
 pub enum BottomComposition {
     Mud,
@@ -69,6 +76,14 @@ impl TopographicRegion {
             depth,
         }
     }
+
+    pub fn has_grass(&self) -> bool {
+        if let Some(veg) = &self.vegetation {
+            matches!(veg, Vegetation::Grass)
+        } else {
+            false
+        }
+    }
 }
 
 impl Display for TopographicRegion {
@@ -79,10 +94,10 @@ impl Display for TopographicRegion {
             write!(f, "{}", struc)
         } else {
             let symbol = match self.depth {
-                d if d < -0.5 => "█",
-                d if d < -0.2 => "▓",
-                d if d < 0.0 => "▒",
-                d if d < 0.3 => "░",
+                d if d < DEEP => "█",
+                d if d < MID => "▓",
+                d if d < SHALLOW => "▒",
+                d if d < SUPER_SHALLOW => "░",
                 _ => "#",
             };
 
@@ -123,24 +138,28 @@ fn get_adjacent(
     x: usize,
     y: usize,
     direction: AdjacencyDirection,
-) -> &TopographicRegion {
+) -> Option<&TopographicRegion> {
+    if y == 0 && matches!(direction, AdjacencyDirection::Up) {
+        return None;
+    }
+
+    if x == 0 && matches!(direction, AdjacencyDirection::Left) {
+        return None;
+    }
+
     let index = match direction {
         AdjacencyDirection::Up => ((y - 1) * width) + x,
         AdjacencyDirection::Left => (y * width) + x - 1,
     };
 
-    map.get(index).expect("Indexed element must exist")
+    Some(map.get(index).expect("Indexed element must exist"))
 }
 
 fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<TopographicRegion> {
-    const REEDS_RATE: f64 = 0.25;
-    const SHALLOW_GRASS_RATE: f64 = 0.5;
-    const DEEP_GRASS_RATE: f64 = 0.2;
-    const TIMBER_GRASS_RATE: f64 = 0.2;
-    const ADJACENT_TIMBER_GRASS_RATE: f64 = TIMBER_GRASS_RATE / 2.0f64;
-    const BOULDER_RATE: f64 = 0.05;
-    const CHUNK_RATE: f64 = 0.25;
-    const ADJACENT_CHUNK_RATE: f64 = CHUNK_RATE * 0.85;
+    const GRASS_RATES: [f64; 4] = [0.1f64, 0.2f64, 0.12f64, 0.05f64];
+    const ADJACENT_GRASS_RATES: [f64; 4] = [0.45f64, 0.65f64, 0.45f64, 0.20f64];
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed.into());
 
     let perlin = Perlin::new(seed);
     let mut data = Vec::with_capacity(width * height);
@@ -151,7 +170,42 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
             let ny = y as f64 * scale;
             let depth = perlin.get([nx, ny]);
 
-            let region = TopographicRegion::new(BottomComposition::Hard, None, None, depth);
+            let mut vegetation: Option<Vegetation> = None;
+            let mut structure: Option<Structure> = None;
+            if depth <= SUPER_SHALLOW {
+                let up_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Up);
+                let left_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Left);
+
+                let adjacent_grass = if let Some(up) = up_adjacent {
+                    up.has_grass()
+                } else if let Some(left) = left_adjacent {
+                    left.has_grass()
+                } else {
+                    false
+                };
+
+                let depth_index = match depth {
+                    d if d < DEEP => 3,
+                    d if d < MID => 2,
+                    d if d < SHALLOW => 1,
+                    d if d < SUPER_SHALLOW => 0,
+                    _ => unreachable!(),
+                };
+
+                let veg_random = rng.random_range(0..100) as f64 / 100.0f64;
+                let veg_depth_rate = if adjacent_grass {
+                    ADJACENT_GRASS_RATES[depth_index]
+                } else {
+                    GRASS_RATES[depth_index]
+                };
+
+                if veg_random <= veg_depth_rate {
+                    vegetation = Some(Vegetation::Grass)
+                }
+            }
+
+            let region =
+                TopographicRegion::new(BottomComposition::Hard, vegetation, structure, depth);
             data.push(region);
         }
     }

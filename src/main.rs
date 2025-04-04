@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 mod topography;
 
@@ -42,7 +42,13 @@ struct FishSimulation {
 }
 
 impl FishSimulation {
-    fn new_with_seed(initial_count: usize, death_rate: f64, spawn_threshold: usize, spawn_count: usize, seed: u64) -> Self {
+    fn new_with_seed(
+        initial_count: usize,
+        death_rate: f64,
+        spawn_threshold: usize,
+        spawn_count: usize,
+        seed: u64,
+    ) -> Self {
         let rng = StdRng::seed_from_u64(seed);
         let fish = (0..initial_count).map(Fish::new).collect();
         FishSimulation {
@@ -90,7 +96,6 @@ impl FishSimulation {
     }
 }
 
-
 fn main() {
     //dioxus::launch(App);
 
@@ -126,7 +131,7 @@ fn App() -> Element {
 
     let chart_data = serde_json::to_string(sim.read().history()).unwrap();
 
-    rsx!{
+    rsx! {
         div { class: "p-4 space-y-4",
             h1 { class: "text-2xl font-bold", "Fish Population Simulation" }
 

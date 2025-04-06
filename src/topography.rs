@@ -6,15 +6,207 @@ use std::vec::Vec;
 
 use noise::{NoiseFn, Perlin};
 
-const SUPER_SHALLOW: f64 = 0.75f64;
-const SHALLOW: f64 = 0.5f64;
-const MID: f64 = 0.0f64;
-const DEEP: f64 = -0.6f64;
+const DEPTH_MIN: f64 = 0.0f64;
+const DEPTH_MAX: f64 = 15.0f64;
+const NOISE_MIN: f64 = -1.0f64;
+const NOISE_LAND_MIN: f64 = NOISE_MIN + 0.5f64; // (-0.5,-1.0] is considered land
+const NOISE_MAX: f64 = 1.0f64;
+
+pub struct DepthRange {
+    pub min: f64,
+    pub max: f64,
+    pub vegetation_rates: [VegetationRate; 3],
+    pub name: DepthRangeName,
+}
+
+impl DepthRange {
+    pub fn get_vegetation_rate(&self, veg: &Vegetation, adjacent: bool) -> f64 {
+        let rates = self
+            .vegetation_rates
+            .iter()
+            .find(|x| matches!(&x.vegetation, veg))
+            .expect("Vegetation must be present");
+
+        if adjacent {
+            rates.adjacency_rate
+        } else {
+            rates.rate
+        }
+    }
+}
+
+pub enum DepthRangeName {
+    SuperShallow,
+    Shallow,
+    MidDepth,
+    Deep,
+}
+
+impl Display for DepthRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let symbol = match self.name {
+            DepthRangeName::Deep => "█",
+            DepthRangeName::MidDepth => "▓",
+            DepthRangeName::Shallow => "▒",
+            DepthRangeName::SuperShallow => "░"
+        };
+
+        write!(f, "{}", symbol.blue())
+    }
+}
+
+pub const DEPTH_RANGES: [DepthRange; 4] = [
+    DepthRange {
+        min: DEPTH_MIN,
+        max: 5.0f64,
+        vegetation_rates: [
+            VegetationRate {
+                vegetation: Vegetation::Grass,
+                rate: 0.1f64,
+                adjacency_rate: 0.45f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Reeds,
+                rate: 0.2f64,
+                adjacency_rate: 0.75f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Mats,
+                rate: 0.1f64,
+                adjacency_rate: 0.75f64,
+            },
+        ],
+        name: DepthRangeName::SuperShallow,
+    },
+    DepthRange {
+        min: 5.0f64,
+        max: 7.0f64,
+        vegetation_rates: [
+            VegetationRate {
+                vegetation: Vegetation::Grass,
+                rate: 0.2f64,
+                adjacency_rate: 0.65f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Reeds,
+                rate: 0.2f64,
+                adjacency_rate: 0.4f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Mats,
+                rate: 0.2f64,
+                adjacency_rate: 0.75f64,
+            },
+        ],
+        name: DepthRangeName::Shallow,
+    },
+    DepthRange {
+        min: 7.0f64,
+        max: 10.0f64,
+        vegetation_rates: [
+            VegetationRate {
+                vegetation: Vegetation::Grass,
+                rate: 0.12f64,
+                adjacency_rate: 0.45f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Reeds,
+                rate: 0.0f64,
+                adjacency_rate: 0.0f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Mats,
+                rate: 0.12f64,
+                adjacency_rate: 0.45f64,
+            },
+        ],
+        name: DepthRangeName::MidDepth,
+    },
+    DepthRange {
+        min: 10.0f64,
+        max: DEPTH_MAX,
+        vegetation_rates: [
+            VegetationRate {
+                vegetation: Vegetation::Grass,
+                rate: 0.05f64,
+                adjacency_rate: 0.20f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Reeds,
+                rate: 0.0f64,
+                adjacency_rate: 0.0f64,
+            },
+            VegetationRate {
+                vegetation: Vegetation::Mats,
+                rate: 0.05f64,
+                adjacency_rate: 0.20f64,
+            },
+        ],
+        name: DepthRangeName::Deep,
+    },
+];
+
+#[derive(Debug, Clone)]
+pub struct DepthError;
+
+impl Display for DepthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid depth")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NoiseDepth(f64);
+
+impl NoiseDepth {
+    pub fn is_land(&self) -> bool {
+        self.0 < NOISE_LAND_MIN
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Depth(f64);
+
+impl Depth {
+    fn depth_range(&self) -> &DepthRange {
+        DEPTH_RANGES
+            .iter()
+            .find(|x| self.0 >= x.min && self.0 <= x.max)
+            .expect("Depth range must exist")
+    }
+}
+
+impl From<NoiseDepth> for Depth {
+    fn from(noise_value: NoiseDepth) -> Self {
+        let converted_value = match noise_value.is_land() {
+            true => DEPTH_MIN - 1.0f64,
+            false => {
+                (noise_value.0 - NOISE_LAND_MIN) / (NOISE_MAX - NOISE_LAND_MIN)
+                    * (DEPTH_MAX - DEPTH_MIN)
+                    + DEPTH_MIN
+            }
+        };
+
+        Self(converted_value)
+    }
+}
+
+impl Display for Depth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.depth_range())
+    }
+}
 
 pub enum BottomComposition {
     Mud,
     Hard,
     Gravel,
+}
+
+pub struct VegetationRate {
+    vegetation: Vegetation,
+    rate: f64,
+    adjacency_rate: f64,
 }
 
 pub enum Vegetation {
@@ -55,19 +247,41 @@ impl Display for Structure {
     }
 }
 
-pub struct TopographicRegion {
+pub enum TopographicRegion {
+    Land(TopographicLandRegion),
+    Water(TopographicWaterRegion)
+}
+
+impl Display for TopographicRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Land(land) => land.fmt(f),
+            Self::Water(water) => water.fmt(f)
+        }
+    }
+}
+
+pub struct TopographicLandRegion {}
+
+impl Display for TopographicLandRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#")
+    }
+}
+
+pub struct TopographicWaterRegion {
     bottom: BottomComposition,
     vegetation: Option<Vegetation>,
     structure: Option<Structure>,
-    depth: f64,
+    depth: Depth,
 }
 
-impl TopographicRegion {
+impl TopographicWaterRegion {
     pub fn new(
         bottom: BottomComposition,
         vegetation: Option<Vegetation>,
         structure: Option<Structure>,
-        depth: f64,
+        depth: Depth,
     ) -> Self {
         Self {
             bottom,
@@ -86,22 +300,14 @@ impl TopographicRegion {
     }
 }
 
-impl Display for TopographicRegion {
+impl Display for TopographicWaterRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(veg) = &self.vegetation {
             write!(f, "{}", veg)
         } else if let Some(struc) = &self.structure {
             write!(f, "{}", struc)
         } else {
-            let symbol = match self.depth {
-                d if d < DEEP => "█",
-                d if d < MID => "▓",
-                d if d < SHALLOW => "▒",
-                d if d < SUPER_SHALLOW => "░",
-                _ => "#",
-            };
-
-            write!(f, "{}", symbol.blue())
+            write!(f, "{}", self.depth)
         }
     }
 }
@@ -156,24 +362,6 @@ fn get_adjacent(
 }
 
 fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<TopographicRegion> {
-    const REED_RATES: [f64; 4] = [0.2f64, 0.2f64, 0.0f64, 0.0f64];
-    const ADJACENT_REED_RATES: [f64; 4] = [0.75f64, 0.4f64, 0.0f64, 0.0f64];
-
-    const GRASS_RATES: [f64; 4] = [0.1f64, 0.2f64, 0.12f64, 0.05f64];
-    const ADJACENT_GRASS_RATES: [f64; 4] = [0.45f64, 0.65f64, 0.45f64, 0.20f64];
-
-    const MAT_RATES: [f64; 4] = [0.1f64, 0.2f64, 0.12f64, 0.05f64];
-    const ADJACENT_MAT_RATES: [f64; 4] = [0.75f64, 0.75f64, 0.45f64, 0.20f64];
-
-    const VEGETATIONS: [[f64; 4]; 3] = [REED_RATES, GRASS_RATES, MAT_RATES];
-    const ADJACENT_VEGETATIONS: [[f64; 4]; 3] = [
-        ADJACENT_REED_RATES,
-        ADJACENT_GRASS_RATES,
-        ADJACENT_MAT_RATES,
-    ];
-
-    const BASELINE_VEG_CHANCE: f64 = 0.75f64;
-
     let mut rng = ChaCha8Rng::seed_from_u64(seed.into());
 
     let perlin = Perlin::new(seed);
@@ -183,21 +371,20 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
         for x in 0..width {
             let nx = x as f64 * scale;
             let ny = y as f64 * scale;
-            let depth = perlin.get([nx, ny]);
+            let noise_depth = NoiseDepth(perlin.get([nx, ny]));
 
-            let mut vegetation: Option<Vegetation> = None;
-            let mut structure: Option<Structure> = None;
+            if noise_depth.is_land() {
+                data.push(TopographicRegion::Land(TopographicLandRegion {}));
+            } else {
+                let depth = Depth::from(noise_depth);
 
-            // Check that we are not on land
-            if depth <= SUPER_SHALLOW {
+                let mut vegetation: Option<Vegetation> = None;
+                let mut structure: Option<Structure> = None;
+
                 let up_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Up);
                 let left_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Left);
 
-                let veg_index = rng.random_range(..3);
-                let chosen_veg_rates = VEGETATIONS[veg_index];
-                let chosen_adjacent_veg_rates = ADJACENT_VEGETATIONS[veg_index];
-
-                let veg_type = match veg_index {
+                let veg_type = match rng.random_range(0..3) {
                     0 => Vegetation::Grass,
                     1 => Vegetation::Reeds,
                     2 => Vegetation::Mats,
@@ -205,37 +392,31 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
                 };
 
                 let adjacent_vegetation = if let Some(up) = up_adjacent {
-                    up.has_vegetation_type(&veg_type)
+                    match up {
+                        TopographicRegion::Land(_) => false,
+                        TopographicRegion::Water(water) => water.has_vegetation_type(&veg_type),
+                    }
                 } else if let Some(left) = left_adjacent {
-                    left.has_vegetation_type(&veg_type)
+                    match left {
+                        TopographicRegion::Land(_) => false,
+                        TopographicRegion::Water(water) => water.has_vegetation_type(&veg_type),
+                    }
                 } else {
                     false
                 };
 
-                let depth_index = match depth {
-                    d if d < DEEP => 3,
-                    d if d < MID => 2,
-                    d if d < SHALLOW => 1,
-                    d if d < SUPER_SHALLOW => 0,
-                    _ => unreachable!(),
-                };
+                let vegetation_rate = depth
+                    .depth_range()
+                    .get_vegetation_rate(&veg_type, adjacent_vegetation);
 
                 let veg_random = rng.random_range(0..=100) as f64 / 100.0f64;
-                let veg_depth_rate = if adjacent_vegetation {
-                    chosen_adjacent_veg_rates[depth_index]
-                } else {
-                    chosen_veg_rates[depth_index]
-                };
-
-                // Determine if vegetation should exist based on depth
-                if veg_random <= veg_depth_rate {
+                if veg_random <= vegetation_rate {
                     vegetation = Some(veg_type)
                 }
-            }
 
-            let region =
-                TopographicRegion::new(BottomComposition::Hard, vegetation, structure, depth);
-            data.push(region);
+                let region = TopographicRegion::Water(TopographicWaterRegion::new(BottomComposition::Hard, vegetation, structure, depth));
+                data.push(region);
+            }
         }
     }
 

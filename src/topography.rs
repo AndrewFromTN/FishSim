@@ -77,9 +77,9 @@ impl TopographicRegion {
         }
     }
 
-    pub fn has_grass(&self) -> bool {
+    pub fn has_vegetation_type(&self, vegetation_type: &Vegetation) -> bool {
         if let Some(veg) = &self.vegetation {
-            matches!(veg, Vegetation::Grass)
+            matches!(veg, vegetation_type)
         } else {
             false
         }
@@ -156,8 +156,23 @@ fn get_adjacent(
 }
 
 fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<TopographicRegion> {
+    const REED_RATES: [f64; 4] = [0.2f64, 0.2f64, 0.0f64, 0.0f64];
+    const ADJACENT_REED_RATES: [f64; 4] = [0.75f64, 0.4f64, 0.0f64, 0.0f64];
+
     const GRASS_RATES: [f64; 4] = [0.1f64, 0.2f64, 0.12f64, 0.05f64];
     const ADJACENT_GRASS_RATES: [f64; 4] = [0.45f64, 0.65f64, 0.45f64, 0.20f64];
+
+    const MAT_RATES: [f64; 4] = [0.1f64, 0.2f64, 0.12f64, 0.05f64];
+    const ADJACENT_MAT_RATES: [f64; 4] = [0.75f64, 0.75f64, 0.45f64, 0.20f64];
+
+    const VEGETATIONS: [[f64; 4]; 3] = [REED_RATES, GRASS_RATES, MAT_RATES];
+    const ADJACENT_VEGETATIONS: [[f64; 4]; 3] = [
+        ADJACENT_REED_RATES,
+        ADJACENT_GRASS_RATES,
+        ADJACENT_MAT_RATES,
+    ];
+
+    const BASELINE_VEG_CHANCE: f64 = 0.75f64;
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed.into());
 
@@ -172,14 +187,27 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
 
             let mut vegetation: Option<Vegetation> = None;
             let mut structure: Option<Structure> = None;
+
+            // Check that we are not on land
             if depth <= SUPER_SHALLOW {
                 let up_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Up);
                 let left_adjacent = get_adjacent(&data, width, x, y, AdjacencyDirection::Left);
 
-                let adjacent_grass = if let Some(up) = up_adjacent {
-                    up.has_grass()
+                let veg_index = rng.random_range(..3);
+                let chosen_veg_rates = VEGETATIONS[veg_index];
+                let chosen_adjacent_veg_rates = ADJACENT_VEGETATIONS[veg_index];
+
+                let veg_type = match veg_index {
+                    0 => Vegetation::Grass,
+                    1 => Vegetation::Reeds,
+                    2 => Vegetation::Mats,
+                    _ => unreachable!(),
+                };
+
+                let adjacent_vegetation = if let Some(up) = up_adjacent {
+                    up.has_vegetation_type(&veg_type)
                 } else if let Some(left) = left_adjacent {
-                    left.has_grass()
+                    left.has_vegetation_type(&veg_type)
                 } else {
                     false
                 };
@@ -192,15 +220,16 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
                     _ => unreachable!(),
                 };
 
-                let veg_random = rng.random_range(0..100) as f64 / 100.0f64;
-                let veg_depth_rate = if adjacent_grass {
-                    ADJACENT_GRASS_RATES[depth_index]
+                let veg_random = rng.random_range(0..=100) as f64 / 100.0f64;
+                let veg_depth_rate = if adjacent_vegetation {
+                    chosen_adjacent_veg_rates[depth_index]
                 } else {
-                    GRASS_RATES[depth_index]
+                    chosen_veg_rates[depth_index]
                 };
 
+                // Determine if vegetation should exist based on depth
                 if veg_random <= veg_depth_rate {
-                    vegetation = Some(Vegetation::Grass)
+                    vegetation = Some(veg_type)
                 }
             }
 

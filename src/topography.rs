@@ -48,7 +48,7 @@ impl Display for DepthRange {
             DepthRangeName::Deep => "█",
             DepthRangeName::MidDepth => "▓",
             DepthRangeName::Shallow => "▒",
-            DepthRangeName::SuperShallow => "░"
+            DepthRangeName::SuperShallow => "░",
         };
 
         write!(f, "{}", symbol.blue())
@@ -249,14 +249,14 @@ impl Display for Structure {
 
 pub enum TopographicRegion {
     Land(TopographicLandRegion),
-    Water(TopographicWaterRegion)
+    Water(TopographicWaterRegion),
 }
 
 impl Display for TopographicRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Land(land) => land.fmt(f),
-            Self::Water(water) => water.fmt(f)
+            Self::Water(water) => water.fmt(f),
         }
     }
 }
@@ -414,7 +414,12 @@ fn generate(seed: u32, width: usize, height: usize, scale: f64) -> Vec<Topograph
                     vegetation = Some(veg_type)
                 }
 
-                let region = TopographicRegion::Water(TopographicWaterRegion::new(BottomComposition::Hard, vegetation, structure, depth));
+                let region = TopographicRegion::Water(TopographicWaterRegion::new(
+                    BottomComposition::Hard,
+                    vegetation,
+                    structure,
+                    depth,
+                ));
                 data.push(region);
             }
         }

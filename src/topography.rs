@@ -179,7 +179,7 @@ impl Depth {
 impl From<NoiseDepth> for Depth {
     fn from(noise_value: NoiseDepth) -> Self {
         let converted_value = match noise_value.is_land() {
-            true => DEPTH_MIN - 1.0f64,
+            true => panic!("Depths that are land are no longer supported. ToDo: refactor this"),
             false => {
                 (noise_value.0 - NOISE_LAND_MIN) / (NOISE_MAX - NOISE_LAND_MIN)
                     * (DEPTH_MAX - DEPTH_MIN)
